@@ -40,7 +40,7 @@ const double max_accel = 9.8; // we assume that throttle=1 corresponds to this m
 
 // Cost coefficients
 // Normalize the scales of cost elements:
-const double cost_weights[6] = {1, 25, 0.003, 0.001, 0.01, 0.005};
+const double cost_weights[6] = {1, 150, 0.004, 0.001, 0.005, 0.005};
 
 class FG_eval {
 	public:
@@ -108,8 +108,8 @@ class FG_eval {
 				fg[1 + y_offset + t] = y1 - y0 - v0*sin(psi0)*dt;
 				fg[1 + psi_offset + t] = psi1 - psi0 - v0*delta/Lf*dt;
 				fg[1 + v_offset + t] = v1 - v0 - a*dt;
-				fg[1 + cte_offset + t] = cte1 - f0 + y0 - v0*sin(epsi0)*dt;
-				fg[1 + epsi_offset + t] = epsi1 - psi0 + psi_des0 - v0 * delta / Lf * dt;
+				fg[1 + cte_offset + t] = cte1 + f0 - y0 - v0*sin(epsi0)*dt;
+				fg[1 + epsi_offset + t] = epsi1 + psi_des0 - psi0 - v0 * delta / Lf * dt;
 			}
 		}
 };

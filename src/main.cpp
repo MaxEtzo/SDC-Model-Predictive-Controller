@@ -118,7 +118,7 @@ int main() {
 			// polyfit
 			auto coeffs = polyfit(ptsx_eigen, ptsy_eigen, 2);
 			double cte = polyeval(coeffs, 0);
-			double epsi = -atan(coeffs[1] + 2*coeffs[2]*px);
+			double epsi = atan(coeffs[1] + 2*coeffs[2]*px);
 			
 			Eigen::VectorXd state(6);
 		        state << 0, 0, 0, mph2ms(v), cte, epsi;
