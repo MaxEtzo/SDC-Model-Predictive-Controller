@@ -1,7 +1,53 @@
 # CarND-Controls-MPC
 Self-Driving Car Engineer Nanodegree Program
 
----
+This project is MaxEtzo's submission for **PID Controller** aassignment which is a part of [**Self-Driving Car Engineer Nanodegree's**](https://eu.udacity.com/course/self-driving-car-engineer-nanodegree--nd013) by **Udacity**
+
+The goals of this project are the following:
+* Implement MPC controller
+* Implement cost function and optimize weights
+* Run MPC controller on test track 
+
+## Rubric Points
+**Here I will consider the [rubric points](https://review.udacity.com/#!/rubrics/896/view) individually and describe how I addressed each point in my implementation**
+
+### Model description
+Model based on kinematic vector **[x, y, *ψ*, v]**, and actuators vector **[*δ*, a]**, where **x**, **y** are coordinates in cartesian system, ***ψ*** - orientation (angle relative to x-axis), **v** - velocity of the vehicle,  ***[δ]*** - steering angle in the range of [-25°, +25°], and **a** is throttle/break in the range of [-1, +1].   
+
+**NOTE**: velocity **v** is translated to m/s (from mph), steering angle ***δ*** to rad (from °), and throttle/break **a** is NOT used as acceleration. Instead it is assumed that throttle of 1 corresponds to max acceleration (see A<sub>max</sub> below); value of 9.8m/s2 was chosen.
+Steering angle ***δ*** is given counter-clockwise (NOT Unity format). Instead, before sending the control parameter, steering value is negated.
+
+Equations for next state prediction:
+
+![State update equations](./res/state.PNG)
+
+Equations for predictions of cross-track and direction errors:
+
+![Error update equations](./res/errors.PNG)
+
+On top of aforementioned errors (cross-track and direction) the following elements are used in cost estimation (remember that weighted squares of elements are summed):
+
+![Error update equations](./res/cost.PNG)
+
+Where **ev** is velocity error from target velocity (set 100mph or 44.704m/s), **a<sub>tang</sub>** is tangential acceleration (estimated from throttle/break parameter) **a<sub>cp</sub>** is centripetal acceleration (estimated from steering angle and velocity), and ***j*** is a jerk (time derivative of acceleration) and is important for human stability and feeling.
+
+### Latency
+** Latency of 100ms** is emulated by taking control parameters with 100ms delay (see above). For example, in case **Δt** is 100ms, steering and throttle/break of previous step is used. In case **Δt** is 50ms steering and throttle/break of two steps prior is used.
+
+### Cost Weights
+Cost weights of **cte**, **e*ψ*** and **ev** are chosed as to normalize the scales. In particular, originally, 1m of  **cte**, 5° of **e*ψ*** and 40mph of **ev** were equated. Cost weight for centripetal acceleration was chosen more aggressively to handle the sharp terms, while cost weight for tangential acceleration is more loose to allow fast acceleration / deceleration (In a car, acceleration / deceleration in direction of a car movement is more comfortable than centripetal). Weight for jerk is also chosen loose. Weights were further tweeked for a more aggressive ride!
+```cpp
+const double cost_weights[6] = {1, 150, 0.004, 0.001, 0.005, 0.005};
+```
+
+### Choosing N, and Δt
+High number of points N results in high computational time. In contrast low number of N will result in insufficient look-ahead for an appropriate reaction. Equivalently, low Δt results in high granularity, but requires higher number of N for a sufficient look-ahead. After trying multiple combinations (starting with N=20, Δt=50ms), my choice fall on N=100 and Δt=100ms as many in the forums agree to be quite optimal.
+
+### Preprocessing (Optimization)
+In order to optimize algorithms, waypoints are initially translated to the vehicle coordinate system. This way, the vehicle initial state is always [0, 0, 0, v], and all calculations are completed in the proximity of origin (with lower numbers).
+
+### Conclusion
+All in all, I think the model resulted in quite fast / aggressive, yet very safe on turns driving.
 
 ## Dependencies
 
