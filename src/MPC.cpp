@@ -7,7 +7,7 @@ using CppAD::AD;
 
 // Timestep length and duration
 const size_t N 			= 10;
-const double dt 		= 0.1;
+const double dt 		= 0.10;
 
 const size_t state_no 		= 6; // state elements number 
 const size_t act_no 		= 2; // actuator elements number
@@ -33,42 +33,16 @@ size_t a_offset 		= 7*N - 1;
 // This is the length from front to CoG that has a similar radius.
 const double Lf = 2.67;
 
-// max speed 100mph
-const double max_speed = 44.704;
+// max speed aprox. 100mph
+const double max_speed = 44.7;
 // max acceleration 9.8m/s2
-const double max_accel = 9.8;
-// max jerk 9.8m/s3
-const double max_jerk = 9.8;
+const double max_accel = 9.8; // we assume that throttle=1 corresponds to this max_accel
 
 // Cost coefficients
-// The main idea is to approx. normalize the scales of cost elements
-// e.g. (v - v_target)^2: 0 ... (100mph)^2 or (44.7m/s)^2, while cte: 0 ... (4m)^2
-// additional weights to be applied: errors: 8; actuators: 5; differential actuator: 3;  
-const cost_weights[7] = 
+// Normalize the scales of cost elements:
+const double cost_weights[6] = {1, 25, 0.003, 0.001, 0.01, 0.005};
 
 class FG_eval {
-		// Private helper functions
-		// target speed based on curvature and tangential acceleration
-       		// total acceleration must not exceed max_accel to avoid slipping.	
-		double target_speed(double R, double cur_accel){
-			double max_centripetal_accel = pow(pow(max_accel, 2) - pow(cur_accel, 2), 0.5);		
-			double target_v = pow(max_centripetal_accel * R, 0.5);
-			if (target_v > max_speed)
-				target_v = max_speed;
-			return target_v;
-		}
-
-		// curvature of fitted polynomial at point x
-		double curvature(double x){
-			double epsilon = 0.001;
-			double a = this->coeffs[2];
-			double b = this->coeffs[1];
-			double R = 10000;
-			if (abs(a) > epsilon){
-				R = pow(1 + pow(2*a*x + b,2),1.5)/abs(2*a);
-			}
-			return R;	
-		}
 	public:
 		// Fitted polynomial coefficients
 		Eigen::VectorXd coeffs;
@@ -78,20 +52,23 @@ class FG_eval {
 		void operator()(ADvector& fg, const ADvector& vars) {
 			// MPC
 			// `fg` a vector of the cost constraints, `vars` is a vector of variable values (state & actuators)
-			// estimating cost
 			fg[0] = 0;
+			// estimating cost
 			for (size_t t = 0; t < N; t++){
-				fg[0] += cost_coeff[1] * pow(vars[cte_offset + t], 2); // range -3.5 .. + 3.5 [m], scale by approx. 1/7
-				fg[0] += cost_coeff[2] * pow(vars[epsi_offset + t], 2); // range -pi .. + pi [rad], scale by approx. 1/2pi
-				fg[0] += cost_coeff[0] * pow(vars[v_offset + t] - 55, 2); // range 0 .. 27.8 [m/s], scale ap 0.036
+				fg[0] += cost_weights[0] * pow(vars[cte_offset + t], 2); 
+				fg[0] += cost_weights[1] * pow(vars[epsi_offset + t], 2);
+				fg[0] += cost_weights[2] * pow(vars[v_offset + t] - max_speed, 2);
 			}
+			// acceleration term (based on actuators)
 			for (size_t t = 0; t < N - 1; t++){
-				fg[0] += cost_coeff[4] * pow(vars[a_offset + t], 2); // range -3.5 .. + 3.5 [m], scale by approx. 1/7
-				fg[0] += cost_coeff[3] * pow(vars[delta_offset + t], 2); // range -pi .. + pi [rad], scale by approx. 1/2pi
+				fg[0] += cost_weights[3] * pow(vars[a_offset + t]*max_accel,2);
+				fg[0] += cost_weights[4] * pow(pow(vars[v_offset + t], 2) * vars[delta_offset + t] / Lf, 2); // centripetal 
 			}
+			// jerk term
 			for (size_t t = 0; t < N - 2; t++){
-				fg[0] += cost_coeff[6] * pow(vars[delta_offset + t + 1] - vars[delta_offset + t],2);
-				fg[0] += cost_coeff[7] * pow(vars[a_offset + t + 1] - vars[a_offset + t], 2);
+				AD<double> tang_jerk = (vars[a_offset + t + 1] - vars[a_offset + t]) * max_accel / dt;
+				AD<double> cp_jerk = (vars[delta_offset + t + 1] - vars[delta_offset + t]) * pow(vars[v_offset + t],2) / Lf / dt;
+				fg[0] += cost_weights[5] * (pow(tang_jerk, 2) + pow(cp_jerk, 2));
 			}
 			fg[1] = vars[0];
 			fg[1 + y_offset] = vars[y_offset];
@@ -99,7 +76,6 @@ class FG_eval {
 			fg[1 + v_offset] = vars[v_offset];
 			fg[1 + cte_offset] = vars[cte_offset];
 			fg[1 + epsi_offset] = vars[epsi_offset];
-			
 			for (size_t t = 1; t < N; t++){
 				// state at time t-1
 				AD<double> x0 = vars[t - 1];
@@ -121,7 +97,8 @@ class FG_eval {
 				// emulate delay in control 
 				if (t > 1) {
 					delta = vars[delta_offset + t - 2];
-					a = vars[a_offset + t - 2] ;
+					// remember, translate throttle to acceleration
+					a = vars[a_offset + t - 2] * max_accel;
 				}
 				// polyfit predictions for error estimation
 				AD<double> f0 = this->coeffs[0] + this->coeffs[1] * x0 + this->coeffs[2] * pow(x0,2);
@@ -167,8 +144,8 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
 	Dvector vars_lowerbound(n_vars);
 	Dvector vars_upperbound(n_vars);
 	for (i = 0; i < n_vars; i++){
-		vars_lowerbound[i] = -1E20;
-		vars_upperbound[i] = 1E20;	
+		vars_lowerbound[i] = -1E19;
+		vars_upperbound[i] = 1E19;	
 	}
 	for (i = delta_offset; i < a_offset; i++){
 		vars_lowerbound[i] = -0.436332;
@@ -217,7 +194,6 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
 	CppAD::ipopt::solve<Dvector, FG_eval>(
 			options, vars, vars_lowerbound, vars_upperbound, constraints_lowerbound,
 			constraints_upperbound, fg_eval, solution);
-
 	// Check some of the solution values
 	ok &= solution.status == CppAD::ipopt::solve_result<Dvector>::success;
 

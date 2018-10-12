@@ -17,6 +17,10 @@ constexpr double pi() { return M_PI; }
 double deg2rad(double x) { return x * pi() / 180; }
 double rad2deg(double x) { return x * 180 / pi(); }
 
+// For converting back and forth between miles per hour and meters per second
+double mph2ms(double x) { return x * 0.44704; }
+double ms2mph(double x) { return x * 2.23693629; }
+
 // Checks if the SocketIO event has JSON data.
 // If there is data the JSON object in string format will be returned,
 // else the empty string "" will be returned.
@@ -77,7 +81,7 @@ int main() {
 			// The 4 signifies a websocket message
 			// The 2 signifies a websocket event
 			string sdata = string(data).substr(0, length);
-			cout << sdata << endl;
+			// cout << sdata << endl;
 			if (sdata.size() > 2 && sdata[0] == '4' && sdata[1] == '2') {
 			string s = hasData(sdata);
 			if (s != "") {
@@ -117,7 +121,7 @@ int main() {
 			double epsi = -atan(coeffs[1] + 2*coeffs[2]*px);
 			
 			Eigen::VectorXd state(6);
-		        state << 0, 0, 0, v, cte, epsi;
+		        state << 0, 0, 0, mph2ms(v), cte, epsi;
 			auto res = mpc.Solve(state, coeffs);
 			steer_value = res[0];
 			throttle_value = res[1];	
@@ -125,13 +129,13 @@ int main() {
 			json msgJson;
 			// NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
 			// Otherwise the values will be in between [-deg2rad(25), deg2rad(25] instead of [-1, 1].
-			msgJson["steering_angle"] = - steer_value / deg2rad(25);
+			msgJson["steering_angle"] = -steer_value / deg2rad(25);
 			msgJson["throttle"] = throttle_value;
 
 			//Display the MPC predicted trajectory 
 			vector<double> mpc_x_vals;
 			vector<double> mpc_y_vals;
-			for (int i = 2; i < res.size(); i++)
+			for (size_t i = 2; i < res.size(); i++)
 			{
 				mpc_x_vals.push_back(res[i++]);
 				mpc_y_vals.push_back(res[i]);
@@ -148,10 +152,13 @@ int main() {
 
 			//.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
 			// the points in the simulator are connected by a Yellow line
-
+			for (int i = 0; i < 100; i++)
+			{
+				next_x_vals.push_back((double) i);
+				next_y_vals.push_back(polyeval(coeffs,(double) i));
+			}
 			msgJson["next_x"] = next_x_vals;
 			msgJson["next_y"] = next_y_vals;
-
 
 			auto msg = "42[\"steer\"," + msgJson.dump() + "]";
 			// std::cout << msg << std::endl;
@@ -164,7 +171,7 @@ int main() {
 			//
 			// NOTE: REMEMBER TO SET THIS TO 100 MILLISECONDS BEFORE
 			// SUBMITTING.
-			//this_thread::sleep_for(chrono::milliseconds(100));
+			this_thread::sleep_for(chrono::milliseconds(100));
 			ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
 			}
 			} else {
